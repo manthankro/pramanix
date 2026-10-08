@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph import END, StateGraph
@@ -10,14 +10,14 @@ class AgentState(TypedDict):
     active_tool: str | None
 
 
-async def reasoning_node(state: AgentState):
+async def reasoning_node(state: AgentState) -> dict[str, Any]:
     last_message = state["messages"][-1].content if state["messages"] else ""
     if "github" in str(last_message).lower():
         return {"active_tool": "github_search"}
     return {"active_tool": None}
 
 
-async def tool_node(state: AgentState):
+async def tool_node(state: AgentState) -> dict[str, Any]:
     if state["active_tool"] == "github_search":
         pass
     return {"messages": state["messages"]}
