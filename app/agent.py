@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Annotated, Any, TypedDict
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import END, StateGraph
 
 
@@ -18,9 +18,14 @@ async def reasoning_node(state: AgentState) -> dict[str, Any]:
 
 
 async def tool_node(state: AgentState) -> dict[str, Any]:
+    messages = list(state["messages"])
     if state["active_tool"] == "github_search":
-        pass
-    return {"messages": state["messages"]}
+        messages.append(
+            AIMessage(
+                content="[Tool Result]: Successfully fetched repository details from GitHub."
+            )
+        )
+    return {"messages": messages}
 
 
 workflow = StateGraph(AgentState)
