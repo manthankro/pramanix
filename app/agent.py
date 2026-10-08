@@ -1,7 +1,6 @@
 from typing import TypedDict, Annotated, Sequence
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, END
-from pydantic import BaseModel
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], "The conversation history"]
