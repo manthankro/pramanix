@@ -21,9 +21,7 @@ async def tool_node(state: AgentState) -> dict[str, Any]:
     messages = list(state["messages"])
     if state["active_tool"] == "github_search":
         messages.append(
-            AIMessage(
-                content="[Tool Result]: Successfully fetched repository details from GitHub."
-            )
+            AIMessage(content="[Tool Result]: Successfully fetched repository details from GitHub.")
         )
     return {"messages": messages}
 
