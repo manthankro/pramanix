@@ -15,9 +15,7 @@ async def test_agent_github_routing():
 
     assert result is not None
     assert "messages" in result
-    tool_messages = [
-        m for m in result["messages"] if "[Tool Result]" in str(m.content)
-    ]
+    tool_messages = [m for m in result["messages"] if "[Tool Result]" in str(m.content)]
     assert len(tool_messages) > 0
 
 
