@@ -1,9 +1,10 @@
 """FastAPI server exposing the Pramanix agent."""
 
-from app.agent import AgentState, pramanix_app
 from fastapi import FastAPI
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
+
+from app.agent import AgentState, pramanix_app
 
 app = FastAPI(title="Pramanix Agent")
 
