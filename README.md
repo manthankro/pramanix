@@ -1,67 +1,60 @@
 # Pramanix Agent 🤖
 
-[![CI](https://github.com/manthankro/pramanix/actions/workflows/ci.yml/badge.svg)](https://github.com/manthankro/pramanix/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 
-An autonomous AI agent built with **LangGraph**, **FastAPI** and **Pydantic**.
-It reasons over a task, decides which tools to call, observes the results and
-repeats until it can give a final answer, all exposed through a REST API.
+An AI agent skeleton built with **LangGraph**, **FastAPI** and **Pydantic**.
+A reasoning node decides whether a tool is needed, a tool node runs it, and the
+result is returned through a REST API.
 
-> Update the badge's workflow file name (`ci.yml`) to match the file in `.github/workflows/`.
+> The agent currently uses a keyword-based router and a simulated tool. It is a
+> starting point for plugging in a real LLM and real tools.
 
 ## Features
 
-- **LangGraph state machine:** a reasoning loop for multi-step tool execution.
-- **FastAPI endpoints:** production-ready API with automatic OpenAPI docs.
-- **Pydantic models:** validated requests, responses and agent state.
-- **Automated CI:** formatting, linting (ruff), type checking (mypy) and tests (pytest).
-- **Docker support:** build and run with one command.
+- **LangGraph state machine:** reason, act, reason loop for multi-step tool execution.
+- **FastAPI endpoints:** `/chat` and `/health`, with automatic OpenAPI docs at `/docs`.
+- **Pydantic models:** validated requests and responses.
+- **CI:** ruff (lint and format), mypy (strict) and pytest on every push.
+- **Docker support.**
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U[Client] -->|HTTP request| A[FastAPI]
-    A --> G[LangGraph agent]
-    G --> R{Reason}
-    R -->|needs tool| T[Tool execution]
+    U[Client] -->|POST /chat| A[FastAPI]
+    A --> R[reason node]
+    R -->|tool needed| T[act node]
     T --> R
-    R -->|done| F[Final answer]
-    F --> A
-    A -->|JSON response| U
+    R -->|no tool| E[Response]
+    E --> A
+    A --> U
 ```
 
-1. The client sends a message to the API.
-2. The agent node asks the LLM what to do next.
-3. If a tool is needed, the tool node runs it and feeds the result back.
-4. The loop ends when the LLM returns a final answer (or the step limit is hit).
+1. The client sends a message to `/chat`.
+2. The `reason` node inspects the user's message and picks a tool or none.
+3. If a tool is chosen, the `act` node runs it and adds the result to the conversation.
+4. The graph returns to `reason`, which stops because the last message is not from the user.
 
 ## Project structure
 
 ```
-app/            FastAPI app, agent graph and tools
-tests/          pytest test suite
-examples/       sample client scripts
-.github/        CI workflows
-.devcontainer/  dev container config
+app/
+  agent.py      LangGraph agent (state, nodes, graph)
+  main.py       FastAPI server
+tests/          pytest suite
+examples/       sample client script
 ```
 
 ## Getting started
 
-### Prerequisites
-
-- Python 3.11+
-- An API key for your LLM provider
-
-### Local setup
+Requires Python 3.11+.
 
 ```bash
 git clone https://github.com/manthankro/pramanix.git
 cd pramanix
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env   # then edit .env with your keys
 ```
 
 ### Run the server
@@ -76,57 +69,52 @@ Open http://localhost:8000/docs for the interactive API docs.
 
 ```bash
 docker build -t pramanix .
-docker run --env-file .env -p 8000:8000 pramanix
-# or
-docker compose up --build
+docker run -p 8000:8000 pramanix
 ```
 
-## Configuration
+## API
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `OPENAI_API_KEY` | LLM provider API key | required |
-| `MODEL_NAME` | Model used by the agent | `gpt-4o-mini` |
-| `HOST` / `PORT` | Server bind address | `0.0.0.0` / `8000` |
-| `LOG_LEVEL` | Logging verbosity | `info` |
-| `MAX_STEPS` | Max reasoning loop iterations | `10` |
-
-> Edit this table to match the settings your code actually reads.
-
-## Usage example
+### `POST /chat`
 
 ```bash
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "What is 25 * 4?"}'
+  -d '{"message": "search github for pramanix"}'
 ```
 
 ```json
-{ "response": "25 * 4 = 100" }
+{
+  "response": "[Tool Result]: Successfully fetched repository details from GitHub.",
+  "tool_used": "github_search"
+}
 ```
 
-> Adjust the route and payload to match your endpoints. A client script is in `examples/query_agent.py`.
+A message without a tool trigger returns `"tool_used": null`.
+
+### `GET /health`
+
+Returns `{"status": "ok"}`.
 
 ## Tools
 
 | Tool | Purpose |
 |------|---------|
-| _tool_name_ | _what it does_ |
-
-> List the tools registered in your agent here.
+| `github_search` | Simulated GitHub repository lookup, triggered when the message mentions "github" |
 
 ## Development
 
 ```bash
-ruff check .      # lint
-ruff format .     # format
-mypy app/         # type check
-pytest            # tests
+ruff check .          # lint
+ruff format --check . # format check
+mypy app/             # type check
+pytest                # tests
 ```
 
-## Contributing
+## Roadmap
 
-Issues and pull requests are welcome. Please run the checks above before opening a PR.
+- Replace the keyword router with an LLM-based decision step.
+- Implement real tools (GitHub API, vector search with ChromaDB).
+- Add streaming responses.
 
 ## License
 
