@@ -1,7 +1,8 @@
 """Tests for the LangGraph agent."""
 
-from app.agent import AgentState, pramanix_app
 from langchain_core.messages import HumanMessage
+
+from app.agent import AgentState, pramanix_app
 
 
 async def test_plain_message_uses_no_tool() -> None:
