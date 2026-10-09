@@ -12,6 +12,12 @@ def test_health() -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_openapi_schema() -> None:
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+    assert "/chat" in response.json()["paths"]
+
+
 def test_chat_without_tool() -> None:
     response = client.post("/chat", json={"message": "hello"})
     assert response.status_code == 200
