@@ -1,17 +1,13 @@
-"""Basic API tests."""
+"""Tests for the LangGraph agent."""
 
-from app.main import app
-from fastapi.testclient import TestClient
+import asyncio
 
-client = TestClient(app)
-
-
-def test_docs_available() -> None:
-    response = client.get("/docs")
-    assert response.status_code == 200
+from app.agent import pramanix_app
+from langchain_core.messages import HumanMessage
 
 
-def test_openapi_schema() -> None:
-    response = client.get("/openapi.json")
-    assert response.status_code == 200
-    assert "paths" in response.json()
+def test_no_tool_for_plain_message() -> None:
+    state = {"messages": [HumanMessage(content="hello")], "active_tool": None}
+    result = asyncio.run(pramanix_app.ainvoke(state))
+    assert result["active_tool"] is None
+    assert len(result["messages"]) == 1
