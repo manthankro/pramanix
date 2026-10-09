@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Annotated, Any, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, StateGraph
 
 
@@ -11,7 +11,7 @@ class AgentState(TypedDict):
 
 
 async def reasoning_node(state: AgentState) -> dict[str, Any]:
-        last = state["messages"][-1] if state["messages"] else None
+           last = state["messages"][-1] if state["messages"] else None
     if isinstance(last, HumanMessage) and "github" in str(last.content).lower():
         return {"active_tool": "github_search"}
     return {"active_tool": None}
