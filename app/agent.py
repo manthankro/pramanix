@@ -11,8 +11,8 @@ class AgentState(TypedDict):
 
 
 async def reasoning_node(state: AgentState) -> dict[str, Any]:
-    last_message = state["messages"][-1].content if state["messages"] else ""
-    if "github" in str(last_message).lower():
+        last = state["messages"][-1] if state["messages"] else None
+    if isinstance(last, HumanMessage) and "github" in str(last.content).lower():
         return {"active_tool": "github_search"}
     return {"active_tool": None}
 
