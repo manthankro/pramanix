@@ -1,0 +1,8 @@
+# .gitignore - make sure these lines exist
+.env
+.env.*
+!.env.example
+frontend/.env.local
+frontend/node_modules/
+frontend/dist/
+.venv/

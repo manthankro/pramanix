@@ -1,0 +1,9 @@
+# docker-compose.yml (reference)
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env          # local development only; use platform secrets in production
+    restart: unless-stopped
