@@ -42,13 +42,9 @@ async def search_repositories(
     try:
         if client is None:
             async with httpx.AsyncClient(timeout=10.0) as own_client:
-                response = await own_client.get(
-                    GITHUB_SEARCH_URL, params=params, headers=headers
-                )
+                response = await own_client.get(GITHUB_SEARCH_URL, params=params, headers=headers)
         else:
-            response = await client.get(
-                GITHUB_SEARCH_URL, params=params, headers=headers
-            )
+            response = await client.get(GITHUB_SEARCH_URL, params=params, headers=headers)
     except httpx.TimeoutException as exc:
         raise GitHubSearchError("GitHub took too long to respond.") from exc
     except httpx.HTTPError as exc:
