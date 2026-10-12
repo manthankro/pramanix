@@ -78,7 +78,10 @@ def _text(message: BaseMessage) -> str:
     content = message.content
     if isinstance(content, str):
         return content
-    parts = [p if isinstance(p, str) else str(p.get("text", "")) for p in content]
+    parts = [
+        p if isinstance(p, str) else str(p.get("text", ""))
+        for p in content
+    ]
     return "".join(parts)
 
 
