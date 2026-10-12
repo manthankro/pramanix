@@ -87,13 +87,13 @@ async def run_chat(
     message: str,
     history: Sequence[tuple[str, str]] = (),
 ) -> AgentResult:
-       messages: list[BaseMessage] = [
+    messages: list[BaseMessage] = [
         HumanMessage(text) if role == "user" else AIMessage(text) for role, text in history
     ]
     start = len(messages)
     messages.append(HumanMessage(message))
 
-       state = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 8})
+    state = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 8})
     new_messages: list[BaseMessage] = state["messages"][start:]
 
     tool_used: str | None = None
