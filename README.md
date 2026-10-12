@@ -123,6 +123,25 @@ docker compose up --build
 
 The Docker image does not include `.env`; Compose provides it at runtime.
 
+## Deploy to Vercel
+
+Create two Vercel projects from this repository and set both projects to deploy
+the `feature/gemini-github-chat` branch while it is being reviewed:
+
+1. **Backend:** set the project root to the repository root. Vercel uses the
+   FastAPI entrypoint in `pyproject.toml`. Add `OPENAI_API_KEY`, `OPENAI_MODEL`,
+   and optionally `GITHUB_TOKEN` as server-side environment variables.
+2. **Frontend:** set the project root to `frontend`. Set `VITE_API_BASE_URL` to
+   the backend deployment's HTTPS URL.
+3. Add the frontend's production URL to the backend's `FRONTEND_ORIGINS` value.
+   Include the exact scheme and hostname; use comma-separated values if more
+   than one origin should be allowed.
+
+Use Vercel preview deployments to verify a change before selecting the
+production deployment. Keep API keys in Vercel's environment-variable settings,
+never in `frontend` variables or committed files. After merging, set both
+projects' production branches to `main`.
+
 ## Quality checks
 
 ```bash
