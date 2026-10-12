@@ -2,6 +2,7 @@
 from collections.abc import Sequence
 from typing import Any
 
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -27,7 +28,11 @@ class ScriptedModel(BaseChatModel):
         return self
 
     def _generate(
-        self, messages: list[BaseMessage], stop: list[str] | None = None, **kwargs: Any
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
     ) -> ChatResult:
         last = messages[-1]
         if isinstance(last, ToolMessage):
