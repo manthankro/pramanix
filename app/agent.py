@@ -88,21 +88,3 @@ async def run_chat(
     history: Sequence[tuple[str, str]] = (),
 ) -> AgentResult:
     messages: list[BaseMessage] = [
-        HumanMessage(text) if role == "user" else AIMessage(text) for role, text in history
-    ]
-    start = len(messages)
-    messages.append(HumanMessage(message))
-
-    state = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 8})
-    new_messages: list[BaseMessage] = state["messages"][start:]
-
-    tool_used: str | None = None
-    repositories: list[Repository] = []
-    for item in new_messages:
-        if isinstance(item, ToolMessage) and item.status != "error":
-            tool_used = item.name
-            if isinstance(item.artifact, list):
-                repositories.extend(Repository.model_validate(r) for r in item.artifact)
-
-    answer = _text(new_messages[-1]).strip() or "I could not produce an answer."
-    return AgentResult(answer, tool_used, repositories)
