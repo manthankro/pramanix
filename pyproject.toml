@@ -1,12 +1,14 @@
 [project]
 name = "pramanix-agent"
-version = "0.1.0"
-description = "Autonomous AI Agent built with LangGraph and FastAPI"
+version = "0.2.0"
+description = "Autonomous AI Agent built with LangGraph, FastAPI and Gemini"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.111.0",
     "langchain>=0.2.0",
-    "langgraph>=0.0.60",
+    "langchain-core>=0.3.0",
+    "langchain-google-genai>=2.0.0",
+    "langgraph>=0.2.0",
     "pydantic>=2.7.0",
     "httpx>=0.27.0",
     "chromadb>=0.5.0",
@@ -23,6 +25,9 @@ dev = [
     "pre-commit>=3.7.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -30,6 +35,9 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
 
 [tool.mypy]
 python_version = "3.11"
