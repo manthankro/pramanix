@@ -52,4 +52,57 @@ def build_agent(
 
     async def call_model(state: AgentState) -> dict[str, list[BaseMessage]]:
         reply = await bound.ainvoke([SystemMessage(SYSTEM_PROMPT), *state["messages"]])
-        return
+        return {"messages": [reply]}
+
+    def route(state: AgentState) -> Literal["tools", "__end__"]:
+        last = state["messages"][-1]
+        if isinstance(last, AIMessage) and last.tool_calls:
+            return "tools"
+        return "__end__"
+
+    graph = StateGraph(AgentState)
+    graph.add_node("model", call_model)
+    graph.add_node("tools", ToolNode(tool_list))
+    graph.add_edge(START, "model")
+    graph.add_conditional_edges("model", route, {"tools": "tools", "__end__": END})
+    graph.add_edge("tools", "model")
+    return graph.compile()
+
+
+@lru_cache
+def get_agent() -> Any:
+    return build_agent()
+
+
+def _text(message: BaseMessage) -> str:
+    content = message.content
+    if isinstance(content, str):
+        return content
+    parts = [p if isinstance(p, str) else str(p.get("text", "")) for p in content]
+    return "".join(parts)
+
+
+async def run_chat(
+    agent: Any,
+    message: str,
+    history: Sequence[tuple[str, str]] = (),
+) -> AgentResult:
+    messages: list[BaseMessage] = [
+        HumanMessage(text) if role == "user" else AIMessage(text) for role, text in history
+    ]
+    start = len(messages)
+    messages.append(HumanMessage(message))
+
+    state = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 8})
+    new_messages: list[BaseMessage] = state["messages"][start:]
+
+    tool_used: str | None = None
+    repositories: list[Repository] = []
+    for item in new_messages:
+        if isinstance(item, ToolMessage) and item.status != "error":
+            tool_used = item.name
+            if isinstance(item.artifact, list):
+                repositories.extend(Repository.model_validate(r) for r in item.artifact)
+
+    answer = _text(new_messages[-1]).strip() or "I could not produce an answer."
+    return AgentResult(answer, tool_used, repositories)
