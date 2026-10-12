@@ -19,8 +19,7 @@ async def github_search(query: str) -> tuple[str, list[dict[str, Any]]]:
     if not repos:
         return "No repositories found for that query.", []
     lines = [
-        f"{r.name} | {r.language or 'n/a'} | {r.stars} stars | "
-        f"{r.description or 'no description'}"
+        f"{r.name} | {r.language or 'n/a'} | {r.stars} stars | {r.description or 'no description'}"
         for r in repos
     ]
     return "\n".join(lines), [r.model_dump() for r in repos]
