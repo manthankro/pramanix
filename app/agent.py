@@ -1,4 +1,5 @@
 """LangGraph agent: Gemini decides when to call the GitHub search tool."""
+
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -77,10 +78,7 @@ def _text(message: BaseMessage) -> str:
     content = message.content
     if isinstance(content, str):
         return content
-    parts = [
-        part if isinstance(part, str) else str(part.get("text", ""))
-        for part in content
-    ]
+    parts = [part if isinstance(part, str) else str(part.get("text", "")) for part in content]
     return "".join(parts)
 
 
@@ -89,10 +87,7 @@ async def run_chat(
     message: str,
     history: Sequence[tuple[str, str]] = (),
 ) -> AgentResult:
-    messages: list[BaseMessage] = [
-        HumanMessage(text) if role == "user" else AIMessage(text)
-        for role, text in history
-    ]
+    messages: list[BaseMessage] = [HumanMessage(text) if role == "user" else AIMessage(text) for role, text in history]
     start = len(messages)
     messages.append(HumanMessage(message))
 
