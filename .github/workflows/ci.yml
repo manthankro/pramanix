@@ -30,7 +30,8 @@ jobs:
         run: ruff format --check .
         
       - name: Type Check with Mypy
-        run: mypy app/
+
+       run: mypy app/
         
       - name: Run Pytest
         run: pytest
