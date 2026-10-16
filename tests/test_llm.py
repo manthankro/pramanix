@@ -6,17 +6,16 @@ from app.llm import MissingConfigError, build_model
 
 
 def test_model_requires_server_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(MissingConfigError, match="OPENAI_API_KEY"):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr("app.llm.google_api_key", lambda: None)
+    with pytest.raises(MissingConfigError, match="GOOGLE_API_KEY"):
         build_model()
 
 
-def test_model_uses_configured_name_and_bounded_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key-never-used-for-network")
-    monkeypatch.setenv("OPENAI_MODEL", "test-model")
+def test_model_uses_configured_gemini_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key-never-used-for-network")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-pro")
 
     model = build_model()
-
-    assert model.model_name == "test-model"
-    assert model.max_tokens == 1024
-    assert model.temperature == 0
+    assert model.model == "gemini-2.5-pro"
+    assert model.temperature == 0.2

@@ -1,152 +1,274 @@
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { ChatResult, ChatTurn, Repository, sendMessage } from "./api";
+// frontend/src/App.tsx
+import React, { useEffect, useRef, useState } from "react";
+import {
+  checkHealth,
+  sendMessage,
+  type ChatTurn,
+  type HealthStatus,
+} from "./api";
+import ChatInput from "./components/ChatInput";
+import ChatMessage, { type MessageItem } from "./components/ChatMessage";
+import Sidebar, { type Conversation } from "./components/Sidebar";
+import WelcomeHero from "./components/WelcomeHero";
 
-type Message = ChatTurn & { id: number; repositories?: Repository[] };
+const STORAGE_KEY = "pramanix.conversations.v2";
 
-const starterPrompts = [
-  "Find beginner Python projects for a library system",
-  "Explain how an AI agent chooses a tool",
-  "Compare React and Vue for a student project",
-];
+function createBlankChat(): Conversation {
+  return {
+    id: crypto.randomUUID(),
+    title: "New Exploration",
+    messages: [],
+    createdAt: Date.now(),
+  };
+}
 
-function RepositoryCard({ repository }: { repository: Repository }) {
-  return (
-    <article className="repo-card">
-      <div className="repo-topline">
-        <span className="repo-mark" aria-hidden="true">⌘</span>
-        <a href={repository.url} target="_blank" rel="noreferrer">{repository.name}</a>
-        <span className="stars" aria-label={`${repository.stars} stars`}>★ {repository.stars.toLocaleString()}</span>
-      </div>
-      <p>{repository.description || "No description provided."}</p>
-      <div className="repo-bottomline">
-        <span>{repository.language || "Language not specified"}</span>
-        {repository.updated_at && <span>Updated {new Date(repository.updated_at).toLocaleDateString()}</span>}
-      </div>
-    </article>
-  );
+function loadInitialChats(): Conversation[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Conversation[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Fall back to blank
+  }
+  return [createBlankChat()];
 }
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>(loadInitialChats);
+  const [activeId, setActiveId] = useState<string>(() => conversations[0]?.id || "");
   const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const activeChat = conversations.find((c) => c.id === activeId) || conversations[0] || createBlankChat();
+
+  // Save conversations to localStorage
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, loading]);
-
-  async function submit(text: string, retry = false) {
-    const value = text.trim();
-    if (!value || loading) return;
-    const retryingLastTurn = retry && messages[messages.length - 1]?.role === "user";
-    const priorMessages = messages
-      .slice(0, retryingLastTurn ? -1 : undefined)
-      .map(({ role, content }) => ({ role, content }));
-    if (!retryingLastTurn) {
-      setMessages((current) => [...current, { id: Date.now(), role: "user", content: value }]);
-    }
-    setDraft("");
-    setLoading(true);
-    setError(null);
-    setPendingMessage(value);
     try {
-      const result: ChatResult = await sendMessage(value, priorMessages);
-      setMessages((current) => [
-        ...current,
-        {
-          id: Date.now() + 1,
-          role: "assistant",
-          content: result.response,
-          repositories: result.repositories,
-        },
-      ]);
-      setPendingMessage(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong. Please try again.");
-      setDraft(value);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations.slice(0, 30)));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [conversations]);
+
+  // Periodic health check
+  useEffect(() => {
+    checkHealth().then(setHealth);
+    const interval = setInterval(() => {
+      checkHealth().then(setHealth);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-scroll to bottom of conversation
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeChat.messages, busy]);
+
+  const updateChat = (id: string, updater: (chat: Conversation) => Conversation) => {
+    setConversations((all) => all.map((c) => (c.id === id ? updater(c) : c)));
+  };
+
+  async function handleSend(customText?: string) {
+    const textToSend = (customText || draft).trim();
+    if (!textToSend || busy) return;
+
+    const currentChatId = activeChat.id;
+    const history: ChatTurn[] = activeChat.messages
+      .filter((m) => !m.error)
+      .slice(-12)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    const userMessage: MessageItem = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: textToSend,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    // Append user message & update chat title if it's the first message
+    updateChat(currentChatId, (chat) => ({
+      ...chat,
+      title: chat.messages.length === 0 ? textToSend.slice(0, 36) : chat.title,
+      messages: [...chat.messages, userMessage],
+    }));
+
+    if (!customText) {
+      setDraft("");
+    }
+    setBusy(true);
+
+    try {
+      const result = await sendMessage(textToSend, history);
+      const assistantMessage: MessageItem = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: result.response,
+        toolUsed: result.tool_used,
+        repositories: result.repositories,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      };
+
+      updateChat(currentChatId, (chat) => ({
+        ...chat,
+        messages: [...chat.messages, assistantMessage],
+      }));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
+      const failureMessage: MessageItem = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: errorMessage,
+        error: true,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      };
+
+      updateChat(currentChatId, (chat) => ({
+        ...chat,
+        messages: [...chat.messages, failureMessage],
+      }));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void submit(draft);
+  function handleNewChat() {
+    const newChat = createBlankChat();
+    setConversations((all) => [newChat, ...all]);
+    setActiveId(newChat.id);
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void submit(draft);
+  function handleDeleteChat(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (conversations.length <= 1) return;
+    const remaining = conversations.filter((c) => c.id !== id);
+    setConversations(remaining);
+    if (activeId === id) {
+      setActiveId(remaining[0].id);
     }
   }
 
-  function newChat() {
-    setMessages([]);
-    setDraft("");
-    setError(null);
-    setPendingMessage(null);
+  function handleClearAll() {
+    if (window.confirm("Are you sure you want to clear all chat history?")) {
+      const fresh = createBlankChat();
+      setConversations([fresh]);
+      setActiveId(fresh.id);
+    }
+  }
+
+  function handleAskAboutRepo(repoName: string) {
+    const prompt = `Can you inspect and explain the GitHub repository '${repoName}'? What is its architecture, primary use-case, and how can a student get started with it?`;
+    handleSend(prompt);
+  }
+
+  function handleRetryLast() {
+    const lastUserMessage = [...activeChat.messages].reverse().find((m) => m.role === "user");
+    if (lastUserMessage) {
+      handleSend(lastUserMessage.content);
+    }
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-icon">P</span><span>pramanix</span></div>
-        <button className="new-chat" onClick={newChat}><span>＋</span> New chat</button>
-        <p className="side-label">YOUR SPACE</p>
-        <button className="side-link active"><span>◉</span> AI Assistant</button>
-        <div className="sidebar-spacer" />
-        <div className="privacy-note"><span>✦</span><p>Your ideas stay yours.<br />API keys remain on the server.</p></div>
-        <div className="profile"><div className="avatar">P</div><div><strong>Pramanix AI</strong><small>Student assistant</small></div></div>
-      </aside>
+    <div className="app-container">
+      <Sidebar
+        conversations={conversations}
+        activeId={activeChat.id}
+        onSelectChat={setActiveId}
+        onNewChat={handleNewChat}
+        onDeleteChat={handleDeleteChat}
+        onClearAll={handleClearAll}
+        health={health}
+        isOpenMobile={mobileSidebarOpen}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
+      />
 
-      <section className="workspace">
-        <header className="topbar"><div className="mobile-brand"><span className="brand-icon">P</span> pramanix</div><span className="model-pill"><i /> AI assistant</span><button className="top-new" onClick={newChat}>＋ <span>New chat</span></button></header>
+      <main className="main-workspace">
+        <header className="workspace-topbar">
+          <button
+            type="button"
+            className="hamburger-btn"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="Open sidebar menu"
+          >
+            ☰
+          </button>
 
-        <div className="conversation" ref={scrollRef}>
-          {messages.length === 0 ? (
-            <div className="welcome">
-              <div className="welcome-orb"><span>✳</span></div>
-              <p className="eyebrow">YOUR AI STUDY PARTNER</p>
-              <h1>Ideas start<br /><em>somewhere.</em></h1>
-              <p className="welcome-copy">Ask a question, explore a topic, or find real open-source projects on GitHub.</p>
-              <div className="suggestions" aria-label="Suggested questions">
-                {starterPrompts.map((prompt, index) => (
-                  <button key={prompt} onClick={() => void submit(prompt)}><span>{["⌘", "✳", "↗"][index]}</span>{prompt}<b>↗</b></button>
-                ))}
-              </div>
-            </div>
+          <div className="topbar-brand">
+            <img src="/pramanix-mark.svg" alt="Pramanix" className="topbar-logo" />
+            <span className="topbar-name">PRAMANIX</span>
+          </div>
+
+          <div className="topbar-right">
+            <span className={`connection-pill ${health ? "connected" : "connecting"}`}>
+              <span className="pill-dot" />
+              <span>{health ? `${health.model}` : "Connecting to server"}</span>
+            </span>
+            <button
+              type="button"
+              className="topbar-new-btn"
+              onClick={handleNewChat}
+              title="Start a new chat"
+            >
+              ＋ New
+            </button>
+          </div>
+        </header>
+
+        <section className="chat-viewport">
+          {activeChat.messages.length === 0 ? (
+            <WelcomeHero onSelectPrompt={(prompt) => handleSend(prompt)} />
           ) : (
-            <div className="message-list">
-              {messages.map((message) => (
-                <article key={message.id} className={`message ${message.role}`}>
-                  {message.role === "assistant" && <div className="assistant-avatar">✳</div>}
-                  <div className="message-body">
-                    {message.role === "assistant" && <span className="message-name">Pramanix</span>}
-                    <div className="message-text">{message.content}</div>
-                    {message.repositories && message.repositories.length > 0 && (
-                      <div className="repo-list">{message.repositories.map((repo) => <RepositoryCard key={repo.url} repository={repo} />)}</div>
-                    )}
-                  </div>
-                </article>
+            <div className="messages-stream">
+              {activeChat.messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  onAskAboutRepo={handleAskAboutRepo}
+                  onRetry={handleRetryLast}
+                />
               ))}
-              {loading && <article className="message assistant"><div className="assistant-avatar">✳</div><div className="message-body"><span className="message-name">Pramanix</span><div className="typing"><i /><i /><i /></div></div></article>}
+
+              {busy && (
+                <div className="message-row assistant thinking-row">
+                  <div className="avatar-wrap">
+                    <img src="/pramanix-mark.svg" alt="Pramanix" className="avatar-img pulsing" />
+                  </div>
+                  <div className="message-content-wrap">
+                    <div className="assistant-meta">
+                      <span className="brand-badge">Pramanix AI</span>
+                    </div>
+                    <div className="message-bubble assistant-bubble thinking-bubble">
+                      <div className="typing-dots">
+                        <span className="t-dot" />
+                        <span className="t-dot" />
+                        <span className="t-dot" />
+                      </div>
+                      <span className="thinking-text">Exploring repositories and reasoning...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} className="scroll-anchor" />
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="composer-wrap">
-          {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => pendingMessage && void submit(pendingMessage, true)}>Retry ↻</button></div>}
-          <form className="composer" onSubmit={onSubmit}>
-            <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKeyDown} placeholder="Ask anything, or find a GitHub project..." rows={1} maxLength={2000} aria-label="Message Pramanix" />
-            <div className="composer-footer"><span>AI can make mistakes. Check important information.</span><button type="submit" disabled={!draft.trim() || loading} aria-label="Send message">↑</button></div>
-          </form>
-          <p className="shortcut">Enter to send <span>·</span> Shift + Enter for a new line</p>
-        </div>
-      </section>
-    </main>
+        <footer className="workspace-composer-footer">
+          <ChatInput
+            value={draft}
+            disabled={busy}
+            onChange={setDraft}
+            onSend={() => handleSend()}
+          />
+        </footer>
+      </main>
+    </div>
   );
 }

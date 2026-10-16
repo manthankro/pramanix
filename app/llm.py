@@ -1,25 +1,24 @@
-"""OpenAI chat model configuration."""
+"""Gemini model factory (Google AI Studio API key)."""
 
-import os
-
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import SecretStr
+
+from app.config import gemini_model, google_api_key
 
 
 class MissingConfigError(RuntimeError):
-    """Raised when the server has no configured model API key."""
+    """Raised when a required server-side setting is absent."""
 
 
-def build_model() -> ChatOpenAI:
-    """Create the OpenAI model using server-side environment configuration."""
-    api_key = os.getenv("OPENAI_API_KEY")
+def build_model() -> ChatGoogleGenerativeAI:
+    """Build and return configured ChatGoogleGenerativeAI model."""
+    api_key = google_api_key()
     if not api_key:
-        raise MissingConfigError("OPENAI_API_KEY is not configured")
-    return ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
-        api_key=SecretStr(api_key),
-        temperature=0,
+        raise MissingConfigError("GOOGLE_API_KEY is not configured")
+    return ChatGoogleGenerativeAI(
+        model=gemini_model(),
+        google_api_key=SecretStr(api_key),
+        temperature=0.2,
         timeout=30,
         max_retries=2,
-        max_completion_tokens=1024,
     )

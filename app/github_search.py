@@ -1,26 +1,47 @@
-"""Read-only GitHub repository search with bounded inputs and safe failures."""
+"""Read-only GitHub repository exploration (fixed host, server-side token)."""
 
-import os
 from typing import Any
 
 import httpx
 
-GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
+from app.config import github_token
+from app.schemas import Repository
+
+GITHUB_API_BASE = "https://api.github.com"
+GITHUB_SEARCH_URL = f"{GITHUB_API_BASE}/search/repositories"
+MAX_QUERY_LENGTH = 200
 
 
 class GitHubSearchError(RuntimeError):
-    """A safe, user-facing GitHub search failure."""
+    """A safe, user-presentable GitHub failure."""
 
 
-def _normalize_repo(repo: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "name": repo["full_name"],
-        "url": repo["html_url"],
-        "description": repo.get("description"),
-        "language": repo.get("language"),
-        "stars": repo.get("stargazers_count", 0),
-        "updated_at": repo.get("updated_at"),
+def _get_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
     }
+    token = github_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _parse_repo(item: dict[str, Any]) -> Repository:
+    license_info = item.get("license")
+    license_name = license_info.get("name") if isinstance(license_info, dict) else None
+    return Repository(
+        name=item.get("name", item.get("full_name", "")),
+        full_name=item.get("full_name"),
+        url=item.get("html_url", ""),
+        description=item.get("description"),
+        language=item.get("language"),
+        stars=item.get("stargazers_count", 0),
+        forks=item.get("forks_count", 0),
+        topics=item.get("topics", []) if isinstance(item.get("topics"), list) else [],
+        license=license_name,
+        updated_at=item.get("updated_at"),
+    )
 
 
 async def search_repositories(
@@ -28,51 +49,82 @@ async def search_repositories(
     limit: int = 5,
     *,
     client: httpx.AsyncClient | None = None,
-) -> list[dict[str, Any]]:
-    """Search public repositories. An optional client makes this easy to test."""
-    normalized_query = query.strip()
-    if not normalized_query:
-        raise ValueError("Search query must not be empty")
-    if len(normalized_query) > 200:
-        raise ValueError("Search query must be 200 characters or fewer")
-    per_page = max(1, min(limit, 10))
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    token = os.getenv("GITHUB_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+) -> list[Repository]:
+    """Search public GitHub repositories by query string with star ordering."""
+    query = query.strip()
+    if not query:
+        return []
+    if len(query) > MAX_QUERY_LENGTH:
+        raise GitHubSearchError("The search query is too long.")
+
     params: dict[str, str | int] = {
-        "q": normalized_query,
+        "q": query,
         "sort": "stars",
         "order": "desc",
-        "per_page": per_page,
+        "per_page": max(1, min(limit, 10)),
     }
+    headers = _get_headers()
 
     try:
         if client is None:
-            async with httpx.AsyncClient(timeout=10.0) as owned_client:
-                response = await owned_client.get(GITHUB_SEARCH_URL, params=params, headers=headers)
+            async with httpx.AsyncClient(timeout=10.0) as own_client:
+                response = await own_client.get(GITHUB_SEARCH_URL, params=params, headers=headers)
         else:
-            response = await client.get(
-                GITHUB_SEARCH_URL, params=params, headers=headers, timeout=10.0
-            )
-        response.raise_for_status()
-        payload = response.json()
+            response = await client.get(GITHUB_SEARCH_URL, params=params, headers=headers)
     except httpx.TimeoutException as exc:
-        raise GitHubSearchError("GitHub search timed out. Please try again.") from exc
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code in (403, 429):
-            raise GitHubSearchError(
-                "GitHub search is rate-limited. Please try again later."
-            ) from exc
-        raise GitHubSearchError("GitHub search is temporarily unavailable.") from exc
-    except (httpx.HTTPError, ValueError) as exc:
-        raise GitHubSearchError("GitHub search is temporarily unavailable.") from exc
-    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
-        raise GitHubSearchError("GitHub returned an unexpected search response.")
+        raise GitHubSearchError("GitHub took too long to respond.") from exc
+    except httpx.HTTPError as exc:
+        raise GitHubSearchError("Could not reach GitHub.") from exc
+
+    if response.status_code in (403, 429):
+        raise GitHubSearchError("GitHub rate limit reached. Try again later.")
+    if response.status_code == 401:
+        raise GitHubSearchError("The GitHub token is invalid or expired.")
+    if response.status_code >= 400:
+        raise GitHubSearchError(f"GitHub returned status {response.status_code}.")
+
     try:
-        return [_normalize_repo(repo) for repo in payload["items"][:per_page]]
-    except (KeyError, TypeError) as exc:
-        raise GitHubSearchError("GitHub returned an unexpected search response.") from exc
+        data = response.json()
+        items = data.get("items", [])
+        return [_parse_repo(item) for item in items]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise GitHubSearchError("GitHub returned an unexpected response.") from exc
+
+
+async def get_repository_details(
+    owner: str,
+    repo: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> Repository:
+    """Fetch metadata for a specific repository by owner and name."""
+    owner = owner.strip()
+    repo = repo.strip()
+    if not owner or not repo:
+        raise GitHubSearchError("Owner and repo name must be provided.")
+
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}"
+    headers = _get_headers()
+
+    try:
+        if client is None:
+            async with httpx.AsyncClient(timeout=10.0) as own_client:
+                response = await own_client.get(url, headers=headers)
+        else:
+            response = await client.get(url, headers=headers)
+    except httpx.TimeoutException as exc:
+        raise GitHubSearchError("GitHub took too long to respond.") from exc
+    except httpx.HTTPError as exc:
+        raise GitHubSearchError("Could not reach GitHub.") from exc
+
+    if response.status_code == 404:
+        raise GitHubSearchError(f"Repository {owner}/{repo} was not found on GitHub.")
+    if response.status_code in (403, 429):
+        raise GitHubSearchError("GitHub rate limit reached. Try again later.")
+    if response.status_code >= 400:
+        raise GitHubSearchError(f"GitHub returned status {response.status_code}.")
+
+    try:
+        return _parse_repo(response.json())
+    except (ValueError, KeyError, TypeError) as exc:
+        raise GitHubSearchError("GitHub returned an unexpected response format.") from exc
