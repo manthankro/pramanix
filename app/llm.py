@@ -11,13 +11,14 @@ class MissingConfigError(RuntimeError):
 
 
 def build_model() -> ChatGoogleGenerativeAI:
+    """Build and return configured ChatGoogleGenerativeAI model."""
     api_key = google_api_key()
     if not api_key:
         raise MissingConfigError("GOOGLE_API_KEY is not configured")
     return ChatGoogleGenerativeAI(
         model=gemini_model(),
         google_api_key=SecretStr(api_key),
-        temperature=0,
+        temperature=0.2,
         timeout=30,
         max_retries=2,
     )

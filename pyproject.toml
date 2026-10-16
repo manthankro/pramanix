@@ -1,6 +1,6 @@
 [project]
 name = "pramanix-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "Autonomous AI Agent built with LangGraph, FastAPI and Gemini"
 requires-python = ">=3.11"
 dependencies = [

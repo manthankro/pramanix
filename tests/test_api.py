@@ -24,7 +24,19 @@ def fake_agent(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def test_health() -> None:
-    assert client.get("/health").json() == {"status": "ok"}
+    data = client.get("/health").json()
+    assert data["status"] == "ok"
+    assert data["version"] == "0.3.0"
+    assert "tools" in data
+    assert "github_search" in data["tools"]
+
+
+def test_suggestions() -> None:
+    data = client.get("/api/suggestions").json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert "prompt" in data[0]
+    assert "category" in data[0]
 
 
 def test_chat_schema() -> None:
