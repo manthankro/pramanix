@@ -1,120 +1,167 @@
-# Pramanix Agent 🤖
+# Pramanix AI
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 
-An AI agent skeleton built with **LangGraph**, **FastAPI** and **Pydantic**.
-A reasoning node decides whether a tool is needed, a tool node runs it, and the
-result is returned through a REST API.
-
-> The agent currently uses a keyword-based router and a simulated tool. It is a
-> starting point for plugging in a real LLM and real tools.
+Pramanix is a student-focused AI assistant built with FastAPI, LangGraph, and
+OpenAI. It answers general questions with a real language model and searches
+public GitHub repositories when that helps.
 
 ## Features
 
-- **LangGraph state machine:** reason, act, reason loop for multi-step tool execution.
-- **FastAPI endpoints:** `/chat` and `/health`, with automatic OpenAPI docs at `/docs`.
-- **Pydantic models:** validated requests and responses.
-- **CI:** ruff (lint and format), mypy (strict) and pytest on every push.
-- **Docker support.**
+- OpenAI tool calling decides when live GitHub search is useful.
+- Repository names, links, descriptions, languages, stars, and update dates come
+  from GitHub's Search API.
+- A responsive React chat UI supports conversation context, loading and error
+  states, retry, and repository cards.
+- API input is bounded, CORS uses an explicit origin allowlist, and provider
+  details are kept out of browser error responses.
+- CI checks Python lint, formatting, strict types, offline tests, and the
+  frontend production build.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U[Client] -->|POST /chat| A[FastAPI]
-    A --> R[reason node]
-    R -->|tool needed| T[act node]
-    T --> R
-    R -->|no tool| E[Response]
-    E --> A
-    A --> U
+    B[React + Vite] -->|POST /chat| A[FastAPI]
+    A --> G[LangGraph]
+    G --> M[OpenAI model]
+    M -->|when needed| T[GitHub Search API]
+    T --> M
+    M -->|answer + repository data| A
+    A --> B
 ```
 
-1. The client sends a message to `/chat`.
-2. The `reason` node inspects the user's message and picks a tool or none.
-3. If a tool is chosen, the `act` node runs it and adds the result to the conversation.
-4. The graph returns to `reason`, which stops because the last message is not from the user.
+The model answers general questions directly. For repository requests, it can
+call the single read-only `github_search` tool. Repository details are returned
+separately so the UI can render verified links and metadata.
 
-## Project structure
+## Run locally
 
-```
-app/
-  agent.py      LangGraph agent (state, nodes, graph)
-  main.py       FastAPI server
-tests/          pytest suite
-examples/       sample client script
-```
-
-## Getting started
-
-Requires Python 3.11+.
+Requires Python 3.11+, Node.js 20+, and an OpenAI API key.
 
 ```bash
 git clone https://github.com/manthankro/pramanix.git
 cd pramanix
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+cp .env.example .env
 ```
 
-### Run the server
+Put your `OPENAI_API_KEY` in `.env`. The default model is `gpt-4.1-mini`. An
+optional `GITHUB_TOKEN` raises the GitHub API rate limit. Keep both keys on the
+server and never commit `.env`.
+
+Start the API:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Open http://localhost:8000/docs for the interactive API docs.
-
-### Docker
+In another terminal, start the frontend:
 
 ```bash
-docker build -t pramanix .
-docker run -p 8000:8000 pramanix
+cd frontend
+npm ci
+npm run dev
 ```
+
+Open <http://localhost:5173>. The API docs are at <http://localhost:8000/docs>.
+Set `VITE_API_BASE_URL` before building the frontend for deployment.
 
 ## API
 
-### `POST /chat`
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "search github for pramanix"}'
-```
+`POST /chat` accepts a new message and optional previous turns:
 
 ```json
 {
-  "response": "[Tool Result]: Successfully fetched repository details from GitHub.",
-  "tool_used": "github_search"
+  "message": "Find beginner Python projects for a library system",
+  "history": []
 }
 ```
 
-A message without a tool trigger returns `"tool_used": null`.
+The response contains an assistant answer, the name of any tool actually used,
+and structured repository results:
 
-### `GET /health`
-
-Returns `{"status": "ok"}`.
-
-## Tools
-
-| Tool | Purpose |
-|------|---------|
-| `github_search` | Simulated GitHub repository lookup, triggered when the message mentions "github" |
-
-## Development
-
-```bash
-ruff check .          # lint
-ruff format --check . # format check
-mypy app/             # type check
-pytest                # tests
+```json
+{
+  "response": "Here are a few repositories that may be useful...",
+  "tool_used": "github_search",
+  "repositories": [
+    {
+      "name": "owner/repository",
+      "url": "https://github.com/owner/repository",
+      "description": "A sample project",
+      "language": "Python",
+      "stars": 123,
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
 ```
 
-## Roadmap
+General answers return `tool_used: null` and an empty `repositories` array.
+`GET /health` returns `{"status":"ok"}`.
 
-- Replace the keyword router with an LLM-based decision step.
-- Implement real tools (GitHub API, vector search with ChromaDB).
-- Add streaming responses.
+## Configuration
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | Yes | Server-side model key |
+| `OPENAI_MODEL` | No | Model name; defaults to `gpt-4.1-mini` |
+| `GITHUB_TOKEN` | No | Optional token for higher GitHub search limits |
+| `FRONTEND_ORIGINS` | No | Comma-separated allowed origins; defaults to `http://localhost:5173` |
+| `VITE_API_BASE_URL` | No | Public API URL embedded in the frontend build |
+
+## Docker
+
+```bash
+cp .env.example .env
+# Set OPENAI_API_KEY in .env, then:
+docker compose up --build
+```
+
+The Docker image does not include `.env`; Compose provides it at runtime.
+
+## Deploy to Vercel
+
+Create two Vercel projects from this repository and set both projects to deploy
+the `feature/gemini-github-chat` branch while it is being reviewed:
+
+1. **Backend:** set the project root to the repository root. Vercel uses the
+   FastAPI entrypoint in `pyproject.toml`. Add `OPENAI_API_KEY`, `OPENAI_MODEL`,
+   and optionally `GITHUB_TOKEN` as server-side environment variables.
+2. **Frontend:** set the project root to `frontend`. Set `VITE_API_BASE_URL` to
+   the backend deployment's HTTPS URL.
+3. Add the frontend's production URL to the backend's `FRONTEND_ORIGINS` value.
+   Include the exact scheme and hostname; use comma-separated values if more
+   than one origin should be allowed.
+
+Use Vercel preview deployments to verify a change before selecting the
+production deployment. Keep API keys in Vercel's environment-variable settings,
+never in `frontend` variables or committed files. After merging, set both
+projects' production branches to `main`.
+
+## Quality checks
+
+```bash
+ruff check .
+ruff format --check .
+mypy app/
+pytest
+cd frontend && npm ci && npm run build
+```
+
+Tests mock model and GitHub calls, so CI does not need paid API access or secrets.
+
+## Safety and deployment
+
+- The only tool is a bounded, read-only GitHub search against a fixed API host.
+- Treat repository metadata as untrusted. The assistant is instructed to ignore
+  instructions found in tool output and not to execute repository code.
+- Configure HTTPS, host-level rate limits, API billing alerts, and a privacy
+  notice before exposing the service publicly.
+- Configure production origins in `FRONTEND_ORIGINS`; CORS is not authentication.
 
 ## License
 
